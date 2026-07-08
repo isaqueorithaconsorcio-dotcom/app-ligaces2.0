@@ -141,6 +141,7 @@
 <!-- TELA 0: INÍCIO (lista de listas) -->
 <div class="tela ativa" id="tela-inicio">
   <h1>App de Ligações</h1>
+  <div class="aviso" id="badge-pendentes" style="display:none; margin-bottom:12px;"></div>
   <div id="listas-container"></div>
   <button class="btn-primario" id="btn-ir-nova-lista">+ Nova lista</button>
 </div>
@@ -242,6 +243,7 @@
 // ===================== CONFIGURAÇÃO =====================
 const URL_BACKEND = "https://script.google.com/macros/s/AKfycbxkWlQqiBV6J8SYt9JYvmhcDJ3E4Je7NKH1z2IHnlfge_NNZ3tg14bjvXYCkcDx4m05RQ/exec";
 const CHAVE_STORAGE = "app_ligacoes_listas";
+const CHAVE_PENDENTES = "app_ligacoes_pendentes";
 
 const MENSAGENS_WHATSAPP = {
   apresentacao: "Opa! Aqui é o Isaque do Consórcio 👋",
@@ -256,6 +258,11 @@ let ponteiro = 0;        // posição atual dentro de ordemFila
 let statusSelecionado = null;
 let linhasBrutas = [];
 let colunasDetectadas = [];
+let mapaHistorico = {};  // telefone normalizado -> {status, data, horario}, carregado 1x por sessão de ligação
+
+function normalizarTelefone(telefone) {
+  return String(telefone || "").replace(/\D/g, "");
+}
 
 // ===================== ARMAZENAMENTO LOCAL (listas salvas no aparelho) =====================
 function carregarListas() {
@@ -279,6 +286,77 @@ function persistirListaAtual() {
     listas[indice] = listaAtual;
   }
   salvarListas(listas);
+}
+
+// ===================== FILA DE SINCRONIZAÇÃO EM SEGUNDO PLANO =====================
+// Salvar na planilha não trava mais a navegação: a gente atualiza a tela
+// na hora e manda pro backend por trás. Se falhar (sem internet, etc.),
+// fica guardado aqui e tenta de novo automaticamente.
+function carregarFilaPendente() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_PENDENTES)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function salvarFilaPendente(fila) {
+  localStorage.setItem(CHAVE_PENDENTES, JSON.stringify(fila));
+}
+
+function enviarResultadoEmSegundoPlano(item) {
+  chamarBackend({ action: "salvarResultado", ...item })
+    .then(resultado => {
+      if (!resultado.ok) throw new Error(resultado.erro || "falha");
+    })
+    .catch(() => {
+      const fila = carregarFilaPendente();
+      fila.push(item);
+      salvarFilaPendente(fila);
+      atualizarBadgePendentes();
+    });
+}
+
+async function tentarSincronizarPendentes() {
+  const fila = carregarFilaPendente();
+  if (!fila.length) return;
+
+  const restantes = [];
+  for (const item of fila) {
+    try {
+      const resultado = await chamarBackend({ action: "salvarResultado", ...item });
+      if (!resultado.ok) restantes.push(item);
+    } catch (e) {
+      restantes.push(item);
+    }
+  }
+  salvarFilaPendente(restantes);
+  atualizarBadgePendentes();
+}
+
+function atualizarBadgePendentes() {
+  const box = document.getElementById("badge-pendentes");
+  if (!box) return;
+  const fila = carregarFilaPendente();
+  if (fila.length) {
+    box.textContent = `${fila.length} contato(s) aguardando sincronizar com a planilha...`;
+    box.style.display = "block";
+  } else {
+    box.style.display = "none";
+  }
+}
+
+// ===================== HISTÓRICO EM LOTE (1 chamada por sessão, não 1 por lead) =====================
+async function carregarHistoricoCompleto() {
+  try {
+    const resultado = await chamarBackend({ action: "listarLeads" });
+    mapaHistorico = {};
+    (resultado.leads || []).forEach(l => {
+      mapaHistorico[normalizarTelefone(l.telefone)] = l;
+    });
+  } catch (e) {
+    mapaHistorico = {};
+  }
 }
 
 // ===================== NAVEGAÇÃO ENTRE TELAS =====================
@@ -345,7 +423,7 @@ function renderizarTelaInicio() {
   });
 }
 
-function abrirLista(id, continuarLigando) {
+async function abrirLista(id, continuarLigando) {
   const listas = carregarListas();
   listaAtual = listas.find(l => l.id === id);
   if (!listaAtual) return;
@@ -355,6 +433,10 @@ function abrirLista(id, continuarLigando) {
       .map((lead, indice) => indice)
       .filter(indice => !listaAtual.leads[indice].status);
     ponteiro = 0;
+
+    // Busca o histórico de todos os leads de uma vez só (1 chamada),
+    // em vez de 1 chamada por lead — é isso que deixava lento entre um e outro.
+    await carregarHistoricoCompleto();
     mostrarProximoLead();
   } else {
     mostrarTelaFim();
@@ -507,7 +589,9 @@ document.getElementById("btn-confirmar-colunas").addEventListener("click", async
     ordemFila = listaAtual.leads.map((_, indice) => indice);
     ponteiro = 0;
 
-    setTimeout(() => mostrarProximoLead(), 600);
+    statusBox.textContent += " Carregando histórico...";
+    await carregarHistoricoCompleto();
+    mostrarProximoLead();
   } catch (err) {
     erroBox.textContent = "Sem conexão. Tente novamente.";
   } finally {
@@ -516,7 +600,7 @@ document.getElementById("btn-confirmar-colunas").addEventListener("click", async
 });
 
 // ===================== TELA 2: LIGAÇÃO =====================
-async function mostrarProximoLead() {
+function mostrarProximoLead() {
   if (ponteiro >= ordemFila.length) {
     mostrarTelaFim();
     return;
@@ -529,18 +613,13 @@ async function mostrarProximoLead() {
   document.getElementById("lead-telefone").textContent = lead.telefone;
   document.getElementById("link-discar").href = "tel:" + lead.telefone.replace(/\s/g, "");
 
+  // Leitura instantânea, direto da memória (já carregamos tudo de uma vez ao abrir a lista)
   const resumoBox = document.getElementById("resumo-anterior-box");
-  resumoBox.innerHTML = "Carregando histórico...";
-
-  try {
-    const resumo = await chamarBackend({ action: "getResumo", telefone: lead.telefone });
-    if (resumo.temHistorico) {
-      resumoBox.innerHTML = `<div class="resumo-anterior">Última vez: ${resumo.data || ""} ${resumo.horario || ""} — <strong>${resumo.status}</strong></div>`;
-    } else {
-      resumoBox.innerHTML = `<div class="resumo-anterior novo">Primeiro contato com este lead</div>`;
-    }
-  } catch (err) {
-    resumoBox.innerHTML = `<div class="resumo-anterior">Não consegui carregar o histórico agora.</div>`;
+  const historico = mapaHistorico[normalizarTelefone(lead.telefone)];
+  if (historico && historico.status) {
+    resumoBox.innerHTML = `<div class="resumo-anterior">Última vez: ${historico.data || ""} ${historico.horario || ""} — <strong>${historico.status}</strong></div>`;
+  } else {
+    resumoBox.innerHTML = `<div class="resumo-anterior novo">Primeiro contato com este lead</div>`;
   }
 
   mostrarTela("tela-ligacao");
@@ -578,7 +657,7 @@ document.querySelectorAll(".btn-status").forEach(botao => {
   });
 });
 
-document.getElementById("btn-salvar-resultado").addEventListener("click", async () => {
+document.getElementById("btn-salvar-resultado").addEventListener("click", () => {
   const erroBox = document.getElementById("erro-resultado");
   erroBox.textContent = "";
 
@@ -592,36 +671,16 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", async 
   const data = document.getElementById("input-data").value;
   const horario = document.getElementById("input-horario").value;
 
-  const botaoSalvar = document.getElementById("btn-salvar-resultado");
-  botaoSalvar.textContent = "Salvando...";
-  botaoSalvar.disabled = true;
+  // Atualiza tudo localmente e já avança — não espera a planilha responder.
+  listaAtual.leads[indiceLead] = { ...lead, status: statusSelecionado, data: data, horario: horario };
+  persistirListaAtual();
+  mapaHistorico[normalizarTelefone(lead.telefone)] = { nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario };
 
-  try {
-    const resultado = await chamarBackend({
-      action: "salvarResultado",
-      nome: lead.nome,
-      telefone: lead.telefone,
-      status: statusSelecionado,
-      data: data,
-      horario: horario
-    });
+  // Envia pra planilha por trás; se falhar, entra na fila de pendências e tenta de novo depois.
+  enviarResultadoEmSegundoPlano({ nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario });
 
-    if (!resultado.ok) {
-      erroBox.textContent = "Erro ao salvar: " + resultado.erro;
-      return;
-    }
-
-    listaAtual.leads[indiceLead] = { ...lead, status: statusSelecionado, data: data, horario: horario };
-    persistirListaAtual();
-
-    ponteiro++;
-    mostrarProximoLead();
-  } catch (err) {
-    erroBox.textContent = "Sem conexão. Tente novamente.";
-  } finally {
-    botaoSalvar.textContent = "Salvar e continuar";
-    botaoSalvar.disabled = false;
-  }
+  ponteiro++;
+  mostrarProximoLead();
 });
 
 // ===================== MENSAGENS RÁPIDAS DE WHATSAPP =====================
@@ -680,6 +739,8 @@ document.getElementById("btn-voltar-inicio-fim").addEventListener("click", () =>
 
 // ===================== INÍCIO =====================
 renderizarTelaInicio();
+atualizarBadgePendentes();
+tentarSincronizarPendentes().then(() => atualizarBadgePendentes());
 
 // ===================== REGISTRO DO SERVICE WORKER (PWA) =====================
 if ("serviceWorker" in navigator) {
