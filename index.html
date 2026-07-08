@@ -102,6 +102,16 @@
   .fim-cartao { text-align: center; }
   .fim-numero { font-size: 44px; font-weight: 600; }
   a.link-ligar { text-decoration: none; display: block; }
+  .btn-voltar {
+    width: auto;
+    background: transparent;
+    color: var(--texto-fraco);
+    padding: 6px 0;
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left;
+  }
 
   /* Botão de Ligar com pulso de sinal saindo, como uma chamada sendo emitida */
   .btn-ligar-pulse {
@@ -127,7 +137,38 @@
     100% { transform: scale(1.18); opacity: 0; }
   }
 
-  .lista-card { background: var(--card); border: 1px solid var(--borda); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+  .cabecalho-inicio { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .logo-app { width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0; }
+  .subtitulo-inicio { font-size: 13px; color: var(--texto-fraco); font-family: 'IBM Plex Mono', monospace; }
+  .btn-acao-principal {
+    background: var(--acao);
+    color: #fff5f2;
+    font-size: 15px;
+    padding: 14px;
+    margin-bottom: 20px;
+  }
+  .lista-card {
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-left: 4px solid var(--acao);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .lista-card.concluida { border-left-color: var(--sucesso); }
+  .lista-cabecalho { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .lista-selo {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+    background: rgba(225,75,60,0.15);
+    color: #ff8a76;
+  }
+  .lista-selo.concluida { background: rgba(76,154,106,0.18); color: #7fd19c; }
   .lista-nome { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
   .lista-info { font-size: 13px; color: var(--texto-fraco); margin-bottom: 12px; font-family: 'IBM Plex Mono', monospace; }
   .barra-progresso { background: var(--bg); border-radius: 6px; height: 8px; margin-bottom: 12px; overflow: hidden; }
@@ -138,12 +179,35 @@
 </head>
 <body>
 
+<!-- TELA -1: IDENTIFICAÇÃO DO VENDEDOR (só aparece na primeira vez) -->
+<div class="tela" id="tela-identificacao">
+  <div class="cabecalho-inicio">
+    <img src="icon-192.png" alt="" class="logo-app">
+    <div>
+      <h1 style="margin-bottom:2px;">App de Ligações</h1>
+      <div class="subtitulo-inicio">Antes de começar</div>
+    </div>
+  </div>
+  <div class="cartao">
+    <span class="rotulo">Qual é o seu nome?</span>
+    <input type="text" id="input-nome-vendedor" placeholder="Ex: Isaque">
+    <button class="btn-acao-principal" id="btn-confirmar-vendedor" style="margin-top:6px;">Começar a usar</button>
+    <div class="erro" id="erro-vendedor"></div>
+  </div>
+</div>
+
 <!-- TELA 0: INÍCIO (lista de listas) -->
 <div class="tela ativa" id="tela-inicio">
-  <h1>App de Ligações</h1>
+  <div class="cabecalho-inicio">
+    <img src="icon-192.png" alt="" class="logo-app">
+    <div>
+      <h1 style="margin-bottom:2px;">App de Ligações</h1>
+      <div class="subtitulo-inicio" id="resumo-geral"></div>
+    </div>
+  </div>
   <div class="aviso" id="badge-pendentes" style="display:none; margin-bottom:12px;"></div>
+  <button class="btn-acao-principal" id="btn-ir-nova-lista">+ Nova lista</button>
   <div id="listas-container"></div>
-  <button class="btn-primario" id="btn-ir-nova-lista">+ Nova lista</button>
 </div>
 
 <!-- TELA 1: UPLOAD -->
@@ -184,6 +248,7 @@
 
 <!-- TELA 2: LIGAÇÃO -->
 <div class="tela" id="tela-ligacao">
+  <button class="btn-voltar" id="btn-voltar-ligacao">← Início</button>
   <div class="progresso mono" id="progresso-fila"></div>
   <div class="cartao">
     <div class="nome-lead" id="lead-nome"></div>
@@ -200,6 +265,7 @@
 
 <!-- TELA 3: RESULTADO -->
 <div class="tela" id="tela-resultado">
+  <button class="btn-voltar" id="btn-voltar-resultado">← Início</button>
   <div class="cartao">
     <h2>Resultado da ligação</h2>
     <div class="nome-lead" id="resultado-nome" style="font-size:18px; margin-bottom:16px;"></div>
@@ -244,6 +310,7 @@
 const URL_BACKEND = "https://script.google.com/macros/s/AKfycbxkWlQqiBV6J8SYt9JYvmhcDJ3E4Je7NKH1z2IHnlfge_NNZ3tg14bjvXYCkcDx4m05RQ/exec";
 const CHAVE_STORAGE = "app_ligacoes_listas";
 const CHAVE_PENDENTES = "app_ligacoes_pendentes";
+const CHAVE_VENDEDOR = "app_ligacoes_vendedor";
 
 const MENSAGENS_WHATSAPP = {
   apresentacao: "Opa! Aqui é o Isaque do Consórcio 👋",
@@ -350,14 +417,33 @@ function atualizarBadgePendentes() {
 async function carregarHistoricoCompleto() {
   try {
     const resultado = await chamarBackend({ action: "listarLeads" });
+    if (!resultado.ok) throw new Error(resultado.erro || "resposta sem ok");
     mapaHistorico = {};
     (resultado.leads || []).forEach(l => {
       mapaHistorico[normalizarTelefone(l.telefone)] = l;
     });
   } catch (e) {
     mapaHistorico = {};
+    alert("Não consegui carregar o histórico da planilha agora (" + e.message + "). Os resumos de 'última vez' podem não aparecer nesta rodada.");
   }
 }
+
+// ===================== IDENTIFICAÇÃO DO VENDEDOR =====================
+function getVendedorAtual() {
+  return localStorage.getItem(CHAVE_VENDEDOR) || "";
+}
+
+document.getElementById("btn-confirmar-vendedor").addEventListener("click", () => {
+  const nome = document.getElementById("input-nome-vendedor").value.trim();
+  const erroBox = document.getElementById("erro-vendedor");
+  if (!nome) {
+    erroBox.textContent = "Digita seu nome pra continuar.";
+    return;
+  }
+  localStorage.setItem(CHAVE_VENDEDOR, nome);
+  renderizarTelaInicio();
+  mostrarTela("tela-inicio");
+});
 
 // ===================== NAVEGAÇÃO ENTRE TELAS =====================
 function mostrarTela(id) {
@@ -380,32 +466,42 @@ async function chamarBackend(payload) {
 function renderizarTelaInicio() {
   const listas = carregarListas();
   const container = document.getElementById("listas-container");
+  const resumoGeral = document.getElementById("resumo-geral");
+
+  const totalPendentes = listas.reduce((soma, l) => soma + l.leads.filter(x => !x.status).length, 0);
+  const vendedor = getVendedorAtual();
+  resumoGeral.innerHTML = (listas.length
+    ? `${listas.length} lista(s) • ${totalPendentes} contato(s) pendente(s)`
+    : "Nenhuma lista carregada ainda") + (vendedor ? ` <span style="opacity:0.7">• ${vendedor}</span>` : "");
 
   if (!listas.length) {
-    container.innerHTML = `<div class="aviso">Nenhuma lista carregada ainda.</div>`;
+    container.innerHTML = "";
     return;
   }
 
   container.innerHTML = "";
-  // Mais recentes primeiro
   listas.slice().reverse().forEach(lista => {
     const concluidos = lista.leads.filter(l => l.status).length;
     const total = lista.leads.length;
     const percentual = total ? Math.round((concluidos / total) * 100) : 0;
+    const listaConcluida = concluidos === total;
     const dataFormatada = new Date(lista.criadaEm).toLocaleDateString("pt-BR");
 
     const card = document.createElement("div");
-    card.className = "lista-card";
+    card.className = "lista-card" + (listaConcluida ? " concluida" : "");
     card.innerHTML = `
-      <div class="lista-nome">${lista.nome}</div>
+      <div class="lista-cabecalho">
+        <div class="lista-nome">${lista.nome}</div>
+        <span class="lista-selo${listaConcluida ? " concluida" : ""}">${listaConcluida ? "Concluída" : "Em aberto"}</span>
+      </div>
       <div class="lista-info">${dataFormatada} • ${concluidos}/${total} concluídos</div>
       <div class="barra-progresso"><div class="barra-progresso-preenchida" style="width:${percentual}%"></div></div>
     `;
 
     const botao = document.createElement("button");
-    botao.className = concluidos < total ? "btn-primario" : "btn-secundario";
-    botao.textContent = concluidos < total ? "Continuar" : "Ver resumo";
-    botao.addEventListener("click", () => abrirLista(lista.id, concluidos < total));
+    botao.className = listaConcluida ? "btn-secundario" : "btn-primario";
+    botao.textContent = listaConcluida ? "Ver resumo" : "Continuar";
+    botao.addEventListener("click", () => abrirLista(lista.id, !listaConcluida));
     card.appendChild(botao);
 
     const btnExcluir = document.createElement("button");
@@ -634,6 +730,18 @@ document.getElementById("btn-pular").addEventListener("click", () => {
   mostrarProximoLead();
 });
 
+document.getElementById("btn-voltar-ligacao").addEventListener("click", () => {
+  renderizarTelaInicio();
+  atualizarBadgePendentes();
+  mostrarTela("tela-inicio");
+});
+
+document.getElementById("btn-voltar-resultado").addEventListener("click", () => {
+  renderizarTelaInicio();
+  atualizarBadgePendentes();
+  mostrarTela("tela-inicio");
+});
+
 // ===================== TELA 3: RESULTADO =====================
 function abrirTelaResultado() {
   const lead = listaAtual.leads[ordemFila[ponteiro]];
@@ -674,10 +782,10 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", () => 
   // Atualiza tudo localmente e já avança — não espera a planilha responder.
   listaAtual.leads[indiceLead] = { ...lead, status: statusSelecionado, data: data, horario: horario };
   persistirListaAtual();
-  mapaHistorico[normalizarTelefone(lead.telefone)] = { nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario };
+  mapaHistorico[normalizarTelefone(lead.telefone)] = { nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: getVendedorAtual() };
 
   // Envia pra planilha por trás; se falhar, entra na fila de pendências e tenta de novo depois.
-  enviarResultadoEmSegundoPlano({ nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario });
+  enviarResultadoEmSegundoPlano({ nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: getVendedorAtual() });
 
   ponteiro++;
   mostrarProximoLead();
@@ -738,7 +846,12 @@ document.getElementById("btn-voltar-inicio-fim").addEventListener("click", () =>
 });
 
 // ===================== INÍCIO =====================
-renderizarTelaInicio();
+if (getVendedorAtual()) {
+  renderizarTelaInicio();
+  mostrarTela("tela-inicio");
+} else {
+  mostrarTela("tela-identificacao");
+}
 atualizarBadgePendentes();
 tentarSincronizarPendentes().then(() => atualizarBadgePendentes());
 
