@@ -307,7 +307,7 @@
 
 <script>
 // ===================== CONFIGURAÇÃO =====================
-const URL_BACKEND = "https://script.google.com/macros/s/AKfycbyLeYG9LfyqXrrokexiMF_T4bCYxhDdkxlwiI-H1xI4SnLddjIOgFzR_BSA1dKLamPy/exec";
+const URL_BACKEND = "https://script.google.com/macros/s/AKfycbxkWlQqiBV6J8SYt9JYvmhcDJ3E4Je7NKH1z2IHnlfge_NNZ3tg14bjvXYCkcDx4m05RQ/exec";
 const CHAVE_STORAGE = "app_ligacoes_listas";
 const CHAVE_PENDENTES = "app_ligacoes_pendentes";
 const CHAVE_VENDEDOR = "app_ligacoes_vendedor";
@@ -689,7 +689,7 @@ document.getElementById("btn-confirmar-colunas").addEventListener("click", async
     await carregarHistoricoCompleto();
     mostrarProximoLead();
   } catch (err) {
-    erroBox.textContent = "Sem conexão. Tente novamente.";
+    erroBox.textContent = "Não consegui enviar pra planilha: " + err.message;
   } finally {
     botao.disabled = false;
   }
@@ -768,6 +768,12 @@ document.querySelectorAll(".btn-status").forEach(botao => {
 document.getElementById("btn-salvar-resultado").addEventListener("click", () => {
   const erroBox = document.getElementById("erro-resultado");
   erroBox.textContent = "";
+
+  if (!getVendedorAtual()) {
+    alert("Seu nome não está identificado neste celular. Vamos te levar pra tela de identificação antes de continuar.");
+    mostrarTela("tela-identificacao");
+    return;
+  }
 
   if (!statusSelecionado) {
     erroBox.textContent = "Escolha um status antes de continuar.";
