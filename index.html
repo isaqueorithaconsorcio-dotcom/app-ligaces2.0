@@ -179,23 +179,6 @@
 </head>
 <body>
 
-<!-- TELA -1: IDENTIFICAÇÃO DO VENDEDOR (só aparece na primeira vez) -->
-<div class="tela" id="tela-identificacao">
-  <div class="cabecalho-inicio">
-    <img src="icon-192.png" alt="" class="logo-app">
-    <div>
-      <h1 style="margin-bottom:2px;">App de Ligações</h1>
-      <div class="subtitulo-inicio">Antes de começar</div>
-    </div>
-  </div>
-  <div class="cartao">
-    <span class="rotulo">Qual é o seu nome?</span>
-    <input type="text" id="input-nome-vendedor" placeholder="Ex: Isaque">
-    <button class="btn-acao-principal" id="btn-confirmar-vendedor" style="margin-top:6px;">Começar a usar</button>
-    <div class="erro" id="erro-vendedor"></div>
-  </div>
-</div>
-
 <!-- TELA 0: INÍCIO (lista de listas) -->
 <div class="tela ativa" id="tela-inicio">
   <div class="cabecalho-inicio">
@@ -901,12 +884,8 @@ document.getElementById("btn-voltar-inicio-fim").addEventListener("click", () =>
 });
 
 // ===================== INÍCIO =====================
-if (getVendedorAtual()) {
-  renderizarTelaInicio();
-  mostrarTela("tela-inicio");
-} else {
-  mostrarTela("tela-identificacao");
-}
+renderizarTelaInicio();
+mostrarTela("tela-inicio");
 atualizarBadgePendentes();
 tentarSincronizarPendentes().then(() => atualizarBadgePendentes());
 
