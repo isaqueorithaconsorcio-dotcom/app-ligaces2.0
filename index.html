@@ -179,7 +179,6 @@
 </head>
 <body>
 
-<!-- TELA 0: INÍCIO (lista de listas) -->
 <div class="tela ativa" id="tela-inicio">
   <div class="cabecalho-inicio">
     <img src="icon-192.png" alt="" class="logo-app">
@@ -193,7 +192,6 @@
   <div id="listas-container"></div>
 </div>
 
-<!-- TELA 1: UPLOAD -->
 <div class="tela" id="tela-upload">
   <h1>Nova lista</h1>
   <div class="cartao">
@@ -205,7 +203,6 @@
   </div>
 </div>
 
-<!-- TELA 1B: CONFIRMAR COLUNAS -->
 <div class="tela" id="tela-colunas">
   <h1>Confirme as colunas</h1>
   <div class="cartao">
@@ -229,7 +226,6 @@
   <div class="aviso" id="status-envio"></div>
 </div>
 
-<!-- TELA 2: LIGAÇÃO -->
 <div class="tela" id="tela-ligacao">
   <button class="btn-voltar" id="btn-voltar-ligacao">← Início</button>
   <div class="progresso mono" id="progresso-fila"></div>
@@ -246,7 +242,6 @@
   </div>
 </div>
 
-<!-- TELA 3: RESULTADO -->
 <div class="tela" id="tela-resultado">
   <button class="btn-voltar" id="btn-voltar-resultado">← Início</button>
   <div class="cartao">
@@ -255,11 +250,8 @@
 
     <span class="rotulo">Vendedor</span>
     <select id="select-vendedor-resultado" style="margin-bottom:16px;">
-    <option value="" disabled selected>+ Selecione um vendedor...</option>
-    <option value="Israel">Israel Santos</option>
-    <option value="Luiz">Luiz Felype</option>
-    <option value="Isaque">Isaque Medeiros</option>
-</select>
+      <option value="" disabled selected>+ Adicionar vendedor...</option>
+    </select>
 
     <span class="rotulo">Status</span>
     <button class="btn-status" data-status="Agendou">Agendou</button>
@@ -285,7 +277,6 @@
   </div>
 </div>
 
-<!-- TELA 4: FIM DA FILA -->
 <div class="tela" id="tela-fim">
   <div class="cartao fim-cartao">
     <div class="fim-numero mono" id="fim-total"></div>
@@ -348,9 +339,6 @@ function persistirListaAtual() {
 }
 
 // ===================== FILA DE SINCRONIZAÇÃO EM SEGUNDO PLANO =====================
-// Salvar na planilha não trava mais a navegação: a gente atualiza a tela
-// na hora e manda pro backend por trás. Se falhar (sem internet, etc.),
-// fica guardado aqui e tenta de novo automaticamente.
 function carregarFilaPendente() {
   try {
     return JSON.parse(localStorage.getItem(CHAVE_PENDENTES)) || [];
@@ -405,7 +393,7 @@ function atualizarBadgePendentes() {
   }
 }
 
-// ===================== HISTÓRICO EM LOTE (1 chamada por sessão, não 1 por lead) =====================
+// ===================== HISTÓRICO EM LOTE =====================
 async function carregarHistoricoCompleto() {
   try {
     const resultado = await chamarBackend({ action: "listarLeads" });
@@ -427,9 +415,10 @@ function getVendedorAtual() {
 
 function getListaVendedores() {
   try {
-    return JSON.parse(localStorage.getItem(CHAVE_LISTA_VENDEDORES)) || [];
+    const salvos = JSON.parse(localStorage.getItem(CHAVE_LISTA_VENDEDORES));
+    return (salvos && salvos.length > 0) ? salvos : ["Israel Santos", "Luiz Felype", "Isaque Medeiros"];
   } catch (e) {
-    return [];
+    return ["Israel Santos", "Luiz Felype", "Isaque Medeiros"];
   }
 }
 
@@ -446,8 +435,6 @@ function definirVendedorPadrao(nome) {
   }
 }
 
-// Preenche o menu de vendedor sempre que a tela de resultado abre,
-// deixando marcado o último que foi usado (fica como padrão).
 function popularSelectVendedor() {
   const select = document.getElementById("select-vendedor-resultado");
   const lista = getListaVendedores();
@@ -472,7 +459,7 @@ document.getElementById("select-vendedor-resultado").addEventListener("change", 
       definirVendedorPadrao(nome.trim());
       popularSelectVendedor();
     } else {
-      popularSelectVendedor(); // cancelou, volta pro que estava selecionado
+      popularSelectVendedor();
     }
     return;
   }
@@ -564,8 +551,6 @@ async function abrirLista(id, continuarLigando) {
       .filter(indice => !listaAtual.leads[indice].status);
     ponteiro = 0;
 
-    // Busca o histórico de todos os leads de uma vez só (1 chamada),
-    // em vez de 1 chamada por lead — é isso que deixava lento entre um e outro.
     await carregarHistoricoCompleto();
     mostrarProximoLead();
   } else {
@@ -743,7 +728,6 @@ function mostrarProximoLead() {
   document.getElementById("lead-telefone").textContent = lead.telefone;
   document.getElementById("link-discar").href = "tel:" + lead.telefone.replace(/\s/g, "");
 
-  // Leitura instantânea, direto da memória (já carregamos tudo de uma vez ao abrir a lista)
   const resumoBox = document.getElementById("resumo-anterior-box");
   const historico = mapaHistorico[normalizarTelefone(lead.telefone)];
   if (historico && historico.status) {
@@ -820,14 +804,12 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", () => 
   const data = document.getElementById("input-data").value;
   const horario = document.getElementById("input-horario").value;
 
-  definirVendedorPadrao(vendedorEscolhido); // fica marcado como padrão pra próxima vez
+  definirVendedorPadrao(vendedorEscolhido);
 
-  // Atualiza tudo localmente e já avança — não espera a planilha responder.
   listaAtual.leads[indiceLead] = { ...lead, status: statusSelecionado, data: data, horario: horario };
   persistirListaAtual();
   mapaHistorico[normalizarTelefone(lead.telefone)] = { nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: vendedorEscolhido };
 
-  // Envia pra planilha por trás; se falhar, entra na fila de pendências e tenta de novo depois.
   enviarResultadoEmSegundoPlano({ nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: vendedorEscolhido });
 
   ponteiro++;
@@ -837,7 +819,7 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", () => 
 // ===================== MENSAGENS RÁPIDAS DE WHATSAPP =====================
 function normalizarParaWhatsapp(telefone) {
   let digitos = String(telefone || "").replace(/\D/g, "");
-  if (digitos.length <= 11) digitos = "55" + digitos; // assume Brasil se não tiver DDI
+  if (digitos.length <= 11) digitos = "55" + digitos;
   return digitos;
 }
 
