@@ -250,7 +250,10 @@
 
     <span class="rotulo">Vendedor</span>
     <select id="select-vendedor-resultado" style="margin-bottom:16px;">
-      <option value="" disabled selected>+ Adicionar vendedor...</option>
+      <option value="" disabled selected>+ Selecione um vendedor...</option>
+      <option value="Israel Santos">Israel Santos</option>
+      <option value="Luiz Felype">Luiz Felype</option>
+      <option value="Isaque Medeiros">Isaque Medeiros</option>
     </select>
 
     <span class="rotulo">Status</span>
@@ -302,19 +305,19 @@ const MENSAGENS_WHATSAPP = {
 };
 
 // ===================== ESTADO =====================
-let listaAtual = null;   // objeto da lista sendo trabalhada agora
-let ordemFila = [];      // índices (dentro de listaAtual.leads) que ainda faltam nesta rodada
-let ponteiro = 0;        // posição atual dentro de ordemFila
+let listaAtual = null;   
+let ordemFila = [];      
+let ponteiro = 0;        
 let statusSelecionado = null;
 let linhasBrutas = [];
 let colunasDetectadas = [];
-let mapaHistorico = {};  // telefone normalizado -> {status, data, horario}, carregado 1x por sessão de ligação
+let mapaHistorico = {};  
 
 function normalizarTelefone(telefone) {
   return String(telefone || "").replace(/\D/g, "");
 }
 
-// ===================== ARMAZENAMENTO LOCAL (listas salvas no aparelho) =====================
+// ===================== ARMAZENAMENTO LOCAL =====================
 function carregarListas() {
   try {
     return JSON.parse(localStorage.getItem(CHAVE_STORAGE)) || [];
@@ -440,15 +443,17 @@ function popularSelectVendedor() {
   const lista = getListaVendedores();
   const atual = getVendedorAtual();
 
+  // Limpa o conteúdo para recriar dinamicamente e evitar problemas de envio
   select.innerHTML = "";
+  select.appendChild(new Option("+ Selecione um vendedor...", ""));
+  
   lista.forEach(nome => select.appendChild(new Option(nome, nome)));
   select.appendChild(new Option("+ Adicionar vendedor...", "__novo__"));
 
   if (atual && lista.includes(atual)) {
     select.value = atual;
-  } else if (lista.length) {
-    select.value = lista[0];
-    definirVendedorPadrao(lista[0]);
+  } else {
+    select.value = "";
   }
 }
 
@@ -458,12 +463,15 @@ document.getElementById("select-vendedor-resultado").addEventListener("change", 
     if (nome && nome.trim()) {
       definirVendedorPadrao(nome.trim());
       popularSelectVendedor();
+      document.getElementById("select-vendedor-resultado").value = nome.trim();
     } else {
       popularSelectVendedor();
     }
     return;
   }
-  definirVendedorPadrao(e.target.value);
+  if(e.target.value) {
+    definirVendedorPadrao(e.target.value);
+  }
 });
 
 // ===================== NAVEGAÇÃO ENTRE TELAS =====================
@@ -594,7 +602,7 @@ document.getElementById("btn-analisar").addEventListener("click", () => {
         return;
       }
 
-      linhasBrutas = linhas;
+      linhasBrutas = lines = linhas;
       colunasDetectadas = Object.keys(linhas[0]);
 
       montarTelaColunas(arquivo.name);
@@ -614,8 +622,8 @@ function montarTelaColunas(nomeArquivo) {
   selectTelefone.innerHTML = "";
 
   colunasDetectadas.forEach(coluna => {
-    selectNome.appendChild(new Option(coluna, coluna));
-    selectTelefone.appendChild(new Option(coluna, coluna));
+    selectNome.appendChild(new Option(coluna, column = coluna));
+    selectTelefone.appendChild(new Option(coluna, column = coluna));
   });
 
   const chuteNome = colunasDetectadas.find(k => k.toLowerCase().includes("nome"));
@@ -789,8 +797,8 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", () => 
   erroBox.textContent = "";
 
   const vendedorEscolhido = document.getElementById("select-vendedor-resultado").value;
-  if (!vendedorEscolhido || vendedorEscolhido === "__novo__") {
-    erroBox.textContent = "Escolhe (ou adiciona) o vendedor antes de continuar.";
+  if (!vendedorEscolhido) {
+    erroBox.textContent = "Escolhe o vendedor antes de continuar.";
     return;
   }
 
