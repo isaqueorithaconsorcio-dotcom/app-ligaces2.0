@@ -270,6 +270,9 @@
     <h2>Resultado da ligação</h2>
     <div class="nome-lead" id="resultado-nome" style="font-size:18px; margin-bottom:16px;"></div>
 
+    <span class="rotulo">Vendedor</span>
+    <select id="select-vendedor-resultado" style="margin-bottom:16px;"></select>
+
     <span class="rotulo">Status</span>
     <button class="btn-status" data-status="Agendou">Agendou</button>
     <button class="btn-status" data-status="Não atendeu">Não atendeu</button>
@@ -311,6 +314,7 @@ const URL_BACKEND = "https://script.google.com/macros/s/AKfycbxkWlQqiBV6J8SYt9JY
 const CHAVE_STORAGE = "app_ligacoes_listas";
 const CHAVE_PENDENTES = "app_ligacoes_pendentes";
 const CHAVE_VENDEDOR = "app_ligacoes_vendedor";
+const CHAVE_LISTA_VENDEDORES = "app_ligacoes_lista_vendedores";
 
 const MENSAGENS_WHATSAPP = {
   apresentacao: "Opa! Aqui é o Isaque do Consórcio 👋",
@@ -433,16 +437,58 @@ function getVendedorAtual() {
   return localStorage.getItem(CHAVE_VENDEDOR) || "";
 }
 
-document.getElementById("btn-confirmar-vendedor").addEventListener("click", () => {
-  const nome = document.getElementById("input-nome-vendedor").value.trim();
-  const erroBox = document.getElementById("erro-vendedor");
-  if (!nome) {
-    erroBox.textContent = "Digita seu nome pra continuar.";
+function getListaVendedores() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_LISTA_VENDEDORES)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function salvarListaVendedores(lista) {
+  localStorage.setItem(CHAVE_LISTA_VENDEDORES, JSON.stringify(lista));
+}
+
+function definirVendedorPadrao(nome) {
+  localStorage.setItem(CHAVE_VENDEDOR, nome);
+  const lista = getListaVendedores();
+  if (!lista.includes(nome)) {
+    lista.push(nome);
+    salvarListaVendedores(lista);
+  }
+}
+
+// Preenche o menu de vendedor sempre que a tela de resultado abre,
+// deixando marcado o último que foi usado (fica como padrão).
+function popularSelectVendedor() {
+  const select = document.getElementById("select-vendedor-resultado");
+  const lista = getListaVendedores();
+  const atual = getVendedorAtual();
+
+  select.innerHTML = "";
+  lista.forEach(nome => select.appendChild(new Option(nome, nome)));
+  select.appendChild(new Option("+ Adicionar vendedor...", "__novo__"));
+
+  if (atual && lista.includes(atual)) {
+    select.value = atual;
+  } else if (lista.length) {
+    select.value = lista[0];
+    definirVendedorPadrao(lista[0]);
+  }
+}
+
+document.getElementById("select-vendedor-resultado").addEventListener("change", (e) => {
+  if (e.target.value === "__novo__") {
+    const nome = prompt("Nome do vendedor:");
+    if (nome && nome.trim()) {
+      definirVendedorPadrao(nome.trim());
+      popularSelectVendedor();
+    } else {
+      popularSelectVendedor(); // cancelou, volta pro que estava selecionado
+    }
     return;
   }
-  localStorage.setItem(CHAVE_VENDEDOR, nome);
-  renderizarTelaInicio();
-  mostrarTela("tela-inicio");
+  definirVendedorPadrao(e.target.value);
 });
 
 // ===================== NAVEGAÇÃO ENTRE TELAS =====================
@@ -749,6 +795,7 @@ function abrirTelaResultado() {
   document.getElementById("erro-resultado").textContent = "";
   statusSelecionado = null;
   document.querySelectorAll(".btn-status").forEach(b => b.classList.remove("selecionado"));
+  popularSelectVendedor();
 
   const agora = new Date();
   document.getElementById("input-data").value = agora.toISOString().slice(0, 10);
@@ -769,9 +816,9 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", () => 
   const erroBox = document.getElementById("erro-resultado");
   erroBox.textContent = "";
 
-  if (!getVendedorAtual()) {
-    alert("Seu nome não está identificado neste celular. Vamos te levar pra tela de identificação antes de continuar.");
-    mostrarTela("tela-identificacao");
+  const vendedorEscolhido = document.getElementById("select-vendedor-resultado").value;
+  if (!vendedorEscolhido || vendedorEscolhido === "__novo__") {
+    erroBox.textContent = "Escolhe (ou adiciona) o vendedor antes de continuar.";
     return;
   }
 
@@ -785,13 +832,15 @@ document.getElementById("btn-salvar-resultado").addEventListener("click", () => 
   const data = document.getElementById("input-data").value;
   const horario = document.getElementById("input-horario").value;
 
+  definirVendedorPadrao(vendedorEscolhido); // fica marcado como padrão pra próxima vez
+
   // Atualiza tudo localmente e já avança — não espera a planilha responder.
   listaAtual.leads[indiceLead] = { ...lead, status: statusSelecionado, data: data, horario: horario };
   persistirListaAtual();
-  mapaHistorico[normalizarTelefone(lead.telefone)] = { nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: getVendedorAtual() };
+  mapaHistorico[normalizarTelefone(lead.telefone)] = { nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: vendedorEscolhido };
 
   // Envia pra planilha por trás; se falhar, entra na fila de pendências e tenta de novo depois.
-  enviarResultadoEmSegundoPlano({ nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: getVendedorAtual() });
+  enviarResultadoEmSegundoPlano({ nome: lead.nome, telefone: lead.telefone, status: statusSelecionado, data: data, horario: horario, vendedor: vendedorEscolhido });
 
   ponteiro++;
   mostrarProximoLead();
